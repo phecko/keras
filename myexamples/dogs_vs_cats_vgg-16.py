@@ -27,10 +27,16 @@ from keras.applications.imagenet_utils import decode_predictions
 from keras.applications.imagenet_utils import preprocess_input
 from keras.applications.imagenet_utils import _obtain_input_shape
 
+from keras.preprocessing.image import ImageDataGenerator
+import numpy as np
+
+from keras.models import Sequential
+from keras.layers import Dropout
+
 
 WEIGHTS_PATH = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg16_weights_tf_dim_ordering_tf_kernels.h5'
 WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5'
-
+WEIGHTS_PATH_NO_TOP_PATH = './h5/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5'
 
 def VGG16(include_top=True, weights='imagenet',
           input_tensor=None, input_shape=None,
@@ -164,9 +170,11 @@ def VGG16(include_top=True, weights='imagenet',
                                     WEIGHTS_PATH,
                                     cache_subdir='models')
         else:
-            weights_path = get_file('vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5',
-                                    WEIGHTS_PATH_NO_TOP,
-                                    cache_subdir='models')
+            # weights_path = get_file('vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5',
+            #                         WEIGHTS_PATH_NO_TOP,
+            #                         cache_subdir='models')
+            weights_path = WEIGHTS_PATH_NO_TOP_PATH
+
         model.load_weights(weights_path)
         if K.backend() == 'theano':
             layer_utils.convert_all_kernels_in_model(model)
@@ -188,3 +196,79 @@ def VGG16(include_top=True, weights='imagenet',
                               'your Keras config '
                               'at ~/.keras/keras.json.')
     return model
+
+
+def create_features():
+
+    vgg16 = VGG16(include_top=False)
+
+    # get image feature forom the vgg16
+
+    train_datagen = ImageDataGenerator(
+        rescale=1./255,
+        shear_range=0.2,
+        zoom_range=0.2,
+        horizontal_flip=True,
+    )
+
+    test_datagen = ImageDataGenerator(
+        rescale=1./255,
+    )
+
+    train_generator = train_datagen.flow_from_directory(
+        "../datas/dogsVscats/train",
+        target_size=(150, 150),
+        batch_size=32,
+        class_mode='binary',
+    )
+
+    bottleneck_features_train = vgg16.predict_generator(train_generator, 100)
+
+    np.save(open('bottleneck_features_train.npy', "wb"), bottleneck_features_train)
+
+
+    validation_generator = test_datagen.flow_from_directory(
+        "../datas/dogsVscats/validation",
+        target_size=(150, 150),
+        batch_size=32,
+        class_mode='binary',
+    )
+
+    bottleneck_features_validation = vgg16.predict_generator(validation_generator, 50)
+
+    np.save(open('bottleneck_features_validation.npy', "wb"), bottleneck_features_validation)
+
+
+def train_nn():
+
+    train_data = np.load(open("bottleneck_features_train.npy", "rb"))
+    train_labels = np.array([0] * 1592 + [1] * 1592)
+
+    validation_data = np.load(open("bottleneck_features_validation.npy", "rb"))
+    validation_labels = np.array([0] * 800 + [1] * 800)
+
+    print("Train Data Shape:", train_data.shape)
+
+    model = Sequential()
+    model.add(Flatten(input_shape=train_data.shape[1:]))
+    model.add(Dense(256, activation="relu"))
+    model.add(Dropout(0.5))
+    model.add(Dense(1, activation='sigmoid'))
+
+
+    model.compile(optimizer='rmsprop',
+                  loss='binary_crossentropy',
+                  metrics=['accuracy'])
+
+    model.fit(train_data, train_labels,
+              epochs=50, batch_size=32,
+              validation_data=(validation_data, validation_labels))
+
+    model.save_weights('bottleneck_fc_model.h5')
+
+
+
+
+
+if __name__ == '__main__':
+    train_nn()
