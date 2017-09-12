@@ -8,8 +8,11 @@
 """
 from __future__ import print_function
 from __future__ import absolute_import
+from __future__ import unicode_literals
 
 import warnings
+
+from keras.applications import vgg16
 
 from keras.models import Model
 from keras.layers import Flatten
@@ -33,12 +36,19 @@ import numpy as np
 from keras.models import Sequential
 from keras.layers import Dropout
 
+from argparse import ArgumentParser
+
+OUT_PATH = "./"
+DATAS_PATH = "./"
+
 
 WEIGHTS_PATH = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg16_weights_tf_dim_ordering_tf_kernels.h5'
 WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5'
-WEIGHTS_PATH_NO_TOP_PATH = './h5/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5'
+WEIGHTS_PATH_NO_TOP_PATH = DATAS_PATH + 'h5/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5'
 
-def VGG16(include_top=True, weights='imagenet',
+
+
+def MyVGG16(include_top=True, weights='imagenet',
           input_tensor=None, input_shape=None,
           pooling=None,
           classes=1000):
@@ -198,11 +208,32 @@ def VGG16(include_top=True, weights='imagenet',
     return model
 
 
+train_features_path = DATAS_PATH + "bottleneck_features_train.npy"
+validate_features_path = DATAS_PATH + "bottleneck_features_validation.npy"
+
+
+def build_parser():
+    parser = ArgumentParser()
+    parser.add_argument('--out-path', type=str,
+                        dest='out_path',
+                        help='root path of the output path, with /',
+                        metavar='OUT_PATH', required=True)
+
+    parser.add_argument('--in-path', type=str,
+                        dest='in_path',help='dir or file to transform',
+                        metavar='IN_PATH', required=True)
+
+
+    return parser
+
+
 def create_features():
 
-    vgg16 = VGG16(include_top=False)
+    # vgg16_model = MyVGG16(include_top=False)
 
-    # get image feature forom the vgg16
+    vgg16_model = vgg16.VGG16(include_top=False)
+
+    # get image feature from the vgg16
 
     train_datagen = ImageDataGenerator(
         rescale=1./255,
@@ -215,6 +246,7 @@ def create_features():
         rescale=1./255,
     )
 
+    # create train generator
     train_generator = train_datagen.flow_from_directory(
         "../datas/dogsVscats/train",
         target_size=(150, 150),
@@ -222,11 +254,12 @@ def create_features():
         class_mode='binary',
     )
 
-    bottleneck_features_train = vgg16.predict_generator(train_generator, 100)
+    bottleneck_features_train = vgg16_model.predict_generator(train_generator, 10)
 
-    np.save(open('bottleneck_features_train.npy', "wb"), bottleneck_features_train)
+    # save the features
+    np.save(open(train_features_path, "w"), bottleneck_features_train)
 
-
+    # create validation generator
     validation_generator = test_datagen.flow_from_directory(
         "../datas/dogsVscats/validation",
         target_size=(150, 150),
@@ -234,18 +267,19 @@ def create_features():
         class_mode='binary',
     )
 
-    bottleneck_features_validation = vgg16.predict_generator(validation_generator, 50)
+    bottleneck_features_validation = vgg16_model.predict_generator(validation_generator, 10)
 
-    np.save(open('bottleneck_features_validation.npy', "wb"), bottleneck_features_validation)
+    # save the features
+    np.save(open(validate_features_path, "w"), bottleneck_features_validation)
 
 
 def train_nn():
 
-    train_data = np.load(open("bottleneck_features_train.npy", "rb"))
-    train_labels = np.array([0] * 1592 + [1] * 1592)
+    train_data = np.load(open(train_features_path, "r"))
+    train_labels = np.array([0] * 160 + [1] * 160)
 
-    validation_data = np.load(open("bottleneck_features_validation.npy", "rb"))
-    validation_labels = np.array([0] * 800 + [1] * 800)
+    validation_data = np.load(open(validate_features_path, "r"))
+    validation_labels = np.array([0] * 160 + [1] * 160)
 
     print("Train Data Shape:", train_data.shape)
 
@@ -271,4 +305,13 @@ def train_nn():
 
 
 if __name__ == '__main__':
+
+    parse = build_parser()
+    opts = parse.parse_args()
+    print(opts)
+
+    OUT_PATH = opts.out_path
+    DATAS_PATH = opts.in_path
+
+    create_features()
     train_nn()
