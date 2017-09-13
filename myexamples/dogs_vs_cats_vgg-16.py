@@ -5,6 +5,8 @@
 
 - [Very Deep Convolutional Networks for Large-Scale Image Recognition](https://arxiv.org/abs/1409.1556)
 
+>>> floyd run --gpu --env keras:py2 --data phecko/datasets/example_datas/1:/my_datas phecko/datasets/weights/1:/weights  "python dogs_vs_cats_vgg-16.py --out-path /output/ --in-path /my_datas/ --weights-path /weights/"
+
 """
 from __future__ import print_function
 from __future__ import absolute_import
@@ -208,8 +210,7 @@ def MyVGG16(include_top=True, weights='imagenet',
     return model
 
 
-train_features_path = DATAS_PATH + "bottleneck_features_train.npy"
-validate_features_path = DATAS_PATH + "bottleneck_features_validation.npy"
+
 
 
 def build_parser():
@@ -223,15 +224,23 @@ def build_parser():
                         dest='in_path',help='dir or file to transform',
                         metavar='IN_PATH', required=True)
 
+    parser.add_argument('--weights-path', type=str,
+                        dest='weights_path', help='dir or file to transform',
+                        metavar='WEIGHTS_PATH', required=True)
+
 
     return parser
 
 
-def create_features():
+def create_features(input_path, output_path):
 
-    # vgg16_model = MyVGG16(include_top=False)
 
-    vgg16_model = vgg16.VGG16(include_top=False)
+    train_features_path = output_path + "bottleneck_features_train.npy"
+    validate_features_path = output_path + "bottleneck_features_validation.npy"
+
+    vgg16_model = MyVGG16(include_top=False)
+
+    # vgg16_model = vgg16.VGG16(include_top=False)
 
     # get image feature from the vgg16
 
@@ -247,39 +256,47 @@ def create_features():
     )
 
     # create train generator
+
+    TRAIN_DATAS_PATH = input_path + "dogsVscats/train"
     train_generator = train_datagen.flow_from_directory(
-        "../datas/dogsVscats/train",
+        TRAIN_DATAS_PATH,
         target_size=(150, 150),
-        batch_size=32,
+        batch_size=1,
         class_mode='binary',
     )
 
-    bottleneck_features_train = vgg16_model.predict_generator(train_generator, 10)
+    bottleneck_features_train = vgg16_model.predict_generator(train_generator, 2000)
 
     # save the features
-    np.save(open(train_features_path, "w"), bottleneck_features_train)
+    np.save(open(train_features_path, "wb"), bottleneck_features_train)
 
     # create validation generator
+    VALIDATE_DATAS_PATH = input_path + "dogsVscats/validation"
     validation_generator = test_datagen.flow_from_directory(
-        "../datas/dogsVscats/validation",
+        VALIDATE_DATAS_PATH,
         target_size=(150, 150),
-        batch_size=32,
+        batch_size=1,
         class_mode='binary',
     )
 
-    bottleneck_features_validation = vgg16_model.predict_generator(validation_generator, 10)
+    bottleneck_features_validation = vgg16_model.predict_generator(validation_generator, 100)
 
     # save the features
-    np.save(open(validate_features_path, "w"), bottleneck_features_validation)
+    np.save(open(validate_features_path, "wb"), bottleneck_features_validation)
 
 
-def train_nn():
+def train_nn(input_path, output_path):
 
-    train_data = np.load(open(train_features_path, "r"))
-    train_labels = np.array([0] * 160 + [1] * 160)
+    train_features_path = output_path + "bottleneck_features_train.npy"
+    validate_features_path = output_path + "bottleneck_features_validation.npy"
 
-    validation_data = np.load(open(validate_features_path, "r"))
-    validation_labels = np.array([0] * 160 + [1] * 160)
+    train_data = np.load(open(train_features_path, "rb"))
+    print("Train Data Shape", train_data.shape)
+    train_labels = np.array([0] * train_data.shape[0]/2 + [1] * train_data.shape[0]/2)
+
+    validation_data = np.load(open(validate_features_path, "rb"))
+    print("Validateion Data Shape", validation_data.shape)
+    validation_labels = np.array([0] * validation_data.shape[0]/2 + [1] * validation_data.shape[0]/2)
 
     print("Train Data Shape:", train_data.shape)
 
@@ -298,7 +315,7 @@ def train_nn():
               epochs=50, batch_size=32,
               validation_data=(validation_data, validation_labels))
 
-    model.save_weights('bottleneck_fc_model.h5')
+    model.save_weights(output_path  + 'bottleneck_fc_model.h5')
 
 
 
@@ -308,10 +325,11 @@ if __name__ == '__main__':
 
     parse = build_parser()
     opts = parse.parse_args()
-    print(opts)
 
     OUT_PATH = opts.out_path
     DATAS_PATH = opts.in_path
 
-    create_features()
-    train_nn()
+    WEIGHTS_PATH_NO_TOP_PATH = opts.weights_path + "vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5"
+
+    create_features(DATAS_PATH, OUT_PATH)
+    train_nn(DATAS_PATH, OUT_PATH)
